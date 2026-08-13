@@ -1,0 +1,60 @@
+name: Build RebuiltDroid Tux Boot-Preserved ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/rebuild-boot-preserving.sh'
+      - 'branding/**'
+      - '.github/workflows/build-boot-preserved-zip.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Android-x86 build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xorriso squashfs-tools curl cpio gzip e2fsprogs
+
+      - name: Download Android 10 x64 base ISO
+        run: |
+          curl -L --fail --retry 5 \
+            'https://archive.org/download/androidx86-10-isos/Android%2010%20x64%20%28Eng%29.iso' \
+            -o android10.iso
+
+      - name: Build boot-preserved ISO
+        env:
+          BASE_ISO: android10.iso
+        run: bash scripts/rebuild-boot-preserving.sh
+
+      - name: Package ISO and metadata
+        run: |
+          mkdir -p package/RebuiltDroid-Tux
+          cp out-preserve/RebuiltDroid-Tux-Android10-preserved.iso package/RebuiltDroid-Tux/
+          cp out-preserve/el-torito.txt package/RebuiltDroid-Tux/
+          cp out-preserve/system-area.txt package/RebuiltDroid-Tux/
+          cp out-preserve/iso-tree.tar.gz package/RebuiltDroid-Tux/
+          printf 'RebuiltDroid Tux Android 10\nBoot-preserving build\n' > package/RebuiltDroid-Tux/BUILD_INFO.txt
+          cd package
+          zip -r ../RebuiltDroid-Tux-Android10-boot-preserved.zip RebuiltDroid-Tux
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: RebuiltDroid-Tux-Android10-boot-preserved-ISO
+          path: out-preserve/RebuiltDroid-Tux-Android10-preserved.iso
+          if-no-files-found: error
+
+      - name: Upload updated ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: RebuiltDroid-Tux-Android10-boot-preserved-ZIP
+          path: RebuiltDroid-Tux-Android10-boot-preserved.zip
+          if-no-files-found: error
