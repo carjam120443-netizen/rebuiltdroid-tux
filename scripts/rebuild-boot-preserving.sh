@@ -88,7 +88,6 @@ echo "[6/8] Rebuilding ONLY the Android system filesystem..."
 
 rm -f "$SYSTEM_SFS"
 
-# Use every CPU available on the GitHub Actions runner.
 CPU_COUNT="$(nproc)"
 
 if [[ "$CPU_COUNT" -lt 1 ]]; then
@@ -106,20 +105,11 @@ mksquashfs \
   -progress
 
 echo
-echo "[7/8] Rebuilding ISO from preserved Android-x86 boot tree..."
+echo "New system.sfs:"
+ls -lh "$SYSTEM_SFS"
 
-#
-# We do not modify:
-#
-# - kernel
-# - initrd
-# - GRUB files
-# - isolinux files
-# - Android boot configuration
-# - EFI image
-#
-# Only system.sfs has been replaced.
-#
+echo
+echo "[7/8] Rebuilding ISO from preserved Android-x86 boot tree..."
 
 ISO_OUTPUT="$OUT/RebuiltDroid-Tux-Android10-preserved.iso"
 
@@ -172,11 +162,9 @@ echo
 echo "========================================"
 echo " BUILD COMPLETE"
 echo "========================================"
-
 echo
 echo "ISO:"
 echo "  $ISO_OUTPUT"
-
 echo
 echo "Artifacts:"
 echo "  $OUT/original-el-torito.txt"
@@ -184,6 +172,5 @@ echo "  $OUT/original-system-area.txt"
 echo "  $OUT/rebuilt-el-torito.txt"
 echo "  $OUT/rebuilt-system-area.txt"
 echo "  $OUT/iso-tree.tar.gz"
-
 echo
 echo "RebuiltDroid Tux ISO is ready."
