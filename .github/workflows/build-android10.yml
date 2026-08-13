@@ -28,11 +28,21 @@ jobs:
           BASE_URL: ${{ inputs.base_url }}
         run: curl -L --fail --retry 3 "$BASE_URL" -o android10.iso
 
+      - name: Verify base Android Package Manager framework
+        env:
+          BASE_ISO: android10.iso
+        run: bash scripts/verify-package-manager.sh
+
       - name: Build RebuiltDroid Tux
         env:
           BASE_ISO: android10.iso
           BASE_URL: ${{ inputs.base_url }}
         run: bash scripts/build-android10-x86.sh
+
+      - name: Verify rebuilt Android Package Manager framework
+        env:
+          BASE_ISO: out/RebuiltDroid-Tux-Android10.iso
+        run: bash scripts/verify-package-manager.sh
 
       - name: Upload RebuiltDroid Tux ISO
         uses: actions/upload-artifact@v4
