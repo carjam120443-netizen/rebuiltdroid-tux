@@ -4,7 +4,6 @@ set -euo pipefail
 BASE_ISO="${BASE_ISO:-android10.iso}"
 WORK="${WORK:-$PWD/work-preserve}"
 OUT="${OUT:-$PWD/out-preserve}"
-
 ISO_TREE="$WORK/iso"
 SYSTEM="$WORK/system"
 
@@ -15,166 +14,70 @@ echo "========================================"
 echo " RebuiltDroid Tux Boot-Preserving Build"
 echo "========================================"
 
-echo
-echo "[1/8] Inspecting original ISO..."
+echo "[1/9] Inspecting original ISO..."
+xorriso -indev "$BASE_ISO" -report_el_torito plain | tee "$OUT/original-el-torito.txt"
+xorriso -indev "$BASE_ISO" -report_system_area plain | tee "$OUT/original-system-area.txt"
 
-xorriso \
-  -indev "$BASE_ISO" \
-  -report_el_torito plain \
-  | tee "$OUT/original-el-torito.txt"
+echo "[2/9] Extracting complete ISO filesystem..."
+xorriso -osirrox on -indev "$BASE_ISO" -extract / "$ISO_TREE"
 
-xorriso \
-  -indev "$BASE_ISO" \
-  -report_system_area plain \
-  | tee "$OUT/original-system-area.txt"
-
-echo
-echo "[2/8] Extracting complete ISO filesystem..."
-
-xorriso \
-  -osirrox on \
-  -indev "$BASE_ISO" \
-  -extract / "$ISO_TREE"
-
-echo
-echo "[3/8] Locating Android system filesystem..."
-
-SYSTEM_SFS="$(
-  find "$ISO_TREE" -type f \
-    \( -iname 'system.sfs' -o -iname 'system.squashfs' \) \
-    -print -quit
-)"
-
+echo "[3/9] Locating Android system filesystem..."
+SYSTEM_SFS="$(find "$ISO_TREE" -type f \( -iname 'system.sfs' -o -iname 'system.squashfs' \) -print -quit)"
 if [[ -z "$SYSTEM_SFS" ]]; then
-    echo "ERROR: Android system SquashFS was not found."
-    echo
-    echo "Files found in the extracted ISO:"
-    find "$ISO_TREE" -maxdepth 5 -type f | sort
-    exit 2
+  echo "ERROR: Android system SquashFS was not found."
+  find "$ISO_TREE" -maxdepth 5 -type f | sort
+  exit 2
 fi
+echo "System filesystem: $SYSTEM_SFS"
 
-echo "System filesystem:"
-echo "  $SYSTEM_SFS"
+echo "[4/9] Extracting real Android system..."
+unsquashfs -d "$SYSTEM" "$SYSTEM_SFS"
 
-echo
-echo "[4/8] Extracting real Android system..."
-
-unsquashfs \
-  -d "$SYSTEM" \
-  "$SYSTEM_SFS"
-
-echo
-echo "[5/8] Applying RebuiltDroid Tux branding..."
-
+echo "[5/9] Applying RebuiltDroid Tux branding..."
 mkdir -p "$SYSTEM/system/etc/rebuiltdroid-tux"
-
-cat > "$SYSTEM/system/etc/rebuiltdroid-tux/build-info" <<'EOF'
-RebuiltDroid Tux
-Android-x86 Android 10 x64
-Boot-preserving build
-EOF
-
-if [[ -d "branding" ]]; then
-    mkdir -p "$SYSTEM/system/etc/rebuiltdroid-tux/branding"
-
-    cp -a \
-      branding/. \
-      "$SYSTEM/system/etc/rebuiltdroid-tux/branding/" \
-      || true
+printf '%s\n' 'RebuiltDroid Tux' 'Android-x86 Android 10 x64' 'Boot-preserving build' > "$SYSTEM/system/etc/rebuiltdroid-tux/build-info"
+if [[ -d branding ]]; then
+  mkdir -p "$SYSTEM/system/etc/rebuiltdroid-tux/branding"
+  cp -a branding/. "$SYSTEM/system/etc/rebuiltdroid-tux/branding/" || true
 fi
 
-echo
-echo "[6/8] Rebuilding ONLY the Android system filesystem..."
-
+echo "[6/9] Rebuilding Android system filesystem..."
 rm -f "$SYSTEM_SFS"
-
-CPU_COUNT="$(nproc)"
-
-if [[ "$CPU_COUNT" -lt 1 ]]; then
-    CPU_COUNT=1
-fi
-
+CPU_COUNT="$(nproc)"; [[ "$CPU_COUNT" -ge 1 ]] || CPU_COUNT=1
 echo "Using $CPU_COUNT processor(s) for SquashFS compression."
-
-mksquashfs \
-  "$SYSTEM" \
-  "$SYSTEM_SFS" \
-  -comp xz \
-  -processors "$CPU_COUNT" \
-  -noappend \
-  -progress
-
-echo
+mksquashfs "$SYSTEM" "$SYSTEM_SFS" -comp xz -processors "$CPU_COUNT" -noappend -progress
 echo "New system.sfs:"
 ls -lh "$SYSTEM_SFS"
 
-echo
-echo "[7/8] Replacing system.sfs while preserving the original Android-x86 boot structure..."
-
+echo "[7/9] Rebuilding ISO with original boot metadata replayed..."
 ISO_OUTPUT="$OUT/RebuiltDroid-Tux-Android10-preserved.iso"
-
-# Start from the original ISO instead of generating a new ISO layout.
-# This preserves the original El Torito BIOS/UEFI boot entries,
-# isohybrid MBR/GPT system area, GRUB EFI image, and isolinux boot image.
-xorriso \
-  -indev "$BASE_ISO" \
-  -outdev "$ISO_OUTPUT" \
+# Use the original ISO as the input and explicitly replay its El Torito/system-area boot data.
+# The ISO tree is copied first, then only system.sfs is replaced.
+xorriso -indev "$BASE_ISO" -outdev "$ISO_OUTPUT" \
   -boot_image any replay \
-  -rm /system.sfs \
   -map "$SYSTEM_SFS" /system.sfs \
   -volid "RebuiltDroid Tux Android 10" \
   -commit
 
-echo
-echo "[8/8] Verifying generated ISO..."
+if [[ ! -s "$ISO_OUTPUT" ]]; then echo "ERROR: ISO was not created."; exit 3; fi
 
-if [[ ! -s "$ISO_OUTPUT" ]]; then
-    echo "ERROR: ISO was not created."
-    exit 3
-fi
+echo "[8/9] Verifying required Android-x86 boot files and metadata..."
+for required in /isolinux/isolinux.bin /isolinux/boot.cat /boot/grub/efi.img /kernel /initrd.img; do
+  if ! xorriso -indev "$ISO_OUTPUT" -find "$required" -type f -print -quit | grep -q .; then
+    echo "WARNING: required path not found: $required"
+  else
+    echo "OK: $required"
+  fi
+done
+xorriso -indev "$ISO_OUTPUT" -report_el_torito plain | tee "$OUT/rebuilt-el-torito.txt"
+xorriso -indev "$ISO_OUTPUT" -report_system_area plain | tee "$OUT/rebuilt-system-area.txt"
+if ! grep -q 'El Torito' "$OUT/rebuilt-el-torito.txt"; then echo "ERROR: El Torito boot metadata missing."; exit 4; fi
+if ! grep -q 'isohybrid' "$OUT/rebuilt-system-area.txt"; then echo "ERROR: isohybrid system area missing."; exit 5; fi
 
-echo
-echo "Generated ISO:"
-ls -lh "$ISO_OUTPUT"
-
-echo
-echo "Checking rebuilt El Torito boot information..."
-
-xorriso \
-  -indev "$ISO_OUTPUT" \
-  -report_el_torito plain \
-  | tee "$OUT/rebuilt-el-torito.txt"
-
-echo
-echo "Checking rebuilt system-area information..."
-
-xorriso \
-  -indev "$ISO_OUTPUT" \
-  -report_system_area plain \
-  | tee "$OUT/rebuilt-system-area.txt"
-
-echo
-echo "Creating extracted ISO tree archive..."
-
-tar \
-  -C "$ISO_TREE" \
-  -czf "$OUT/iso-tree.tar.gz" \
-  .
-
-echo
+echo "[9/9] Creating extracted ISO tree archive..."
+tar -C "$ISO_TREE" -czf "$OUT/iso-tree.tar.gz" .
 echo "========================================"
 echo " BUILD COMPLETE"
 echo "========================================"
-echo
-echo "ISO:"
-echo "  $ISO_OUTPUT"
-echo
-echo "Artifacts:"
-echo "  $OUT/original-el-torito.txt"
-echo "  $OUT/original-system-area.txt"
-echo "  $OUT/rebuilt-el-torito.txt"
-echo "  $OUT/rebuilt-system-area.txt"
-echo "  $OUT/iso-tree.tar.gz"
-echo
+ls -lh "$ISO_OUTPUT"
 echo "RebuiltDroid Tux ISO is ready."
-echo
