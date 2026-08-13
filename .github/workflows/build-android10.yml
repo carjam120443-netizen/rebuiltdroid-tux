@@ -41,12 +41,32 @@ jobs:
 
       - name: Verify rebuilt Android Package Manager framework
         env:
-          BASE_ISO: out/RebuiltDroid-Tux-Android10.iso
+          BASE_ISO: android10.iso
         run: bash scripts/verify-package-manager.sh
 
-      - name: Upload RebuiltDroid Tux ISO
+      - name: Confirm ISO output exists
+        run: |
+          test -f out/RebuiltDroid-Tux-Android10.iso
+          test -f out/filesystems/system.sfs
+          ls -lh out/RebuiltDroid-Tux-Android10.iso out/filesystems/system.sfs
+
+      - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
-          name: RebuiltDroid-Tux-Android10-x64
-          path: out/
+          name: RebuiltDroid-Tux-Android10-ISO
+          path: out/RebuiltDroid-Tux-Android10.iso
+          if-no-files-found: error
+
+      - name: Upload filesystem
+        uses: actions/upload-artifact@v4
+        with:
+          name: RebuiltDroid-Tux-Android10-Filesystem
+          path: out/filesystems/system.sfs
+          if-no-files-found: error
+
+      - name: Upload build information
+        uses: actions/upload-artifact@v4
+        with:
+          name: RebuiltDroid-Tux-Android10-Build-Info
+          path: out/BUILD_INFO.txt
           if-no-files-found: error
