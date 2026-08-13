@@ -19,7 +19,6 @@ mkdir -p "$TREE" "$SYSTEM" "$OUT"
 
 echo "Extracting Android-x86 ISO..."
 xorriso -osirrox on -indev "$BASE_ISO" -extract / "$TREE"
-
 echo "Searching ISO for Android system filesystem..."
 SYSTEM_SFS="$(find "$TREE" -type f \( -iname 'system.sfs' -o -iname 'system.squashfs' \) -print -quit)"
 
@@ -30,18 +29,20 @@ if [[ -z "$SYSTEM_SFS" ]]; then
 fi
 
 echo "Found system filesystem: ${SYSTEM_SFS#"$TREE"/}"
-
 echo "Extracting real system filesystem..."
 unsquashfs -d "$SYSTEM" "$SYSTEM_SFS"
 
-mkdir -p "$SYSTEM/etc/rebuiltdroid-tux"
-cat > "$SYSTEM/etc/rebuiltdroid-tux/BUILD_INFO" <<'EOF'
+# Android-x86's SquashFS contents represent the Android /system tree.
+# Keep RebuiltDroid metadata inside that tree rather than alongside it.
+ANDROID_SYSTEM="$SYSTEM/system"
+mkdir -p "$ANDROID_SYSTEM/etc/rebuiltdroid-tux"
+cat > "$ANDROID_SYSTEM/etc/rebuiltdroid-tux/BUILD_INFO" <<'EOF'
 RebuiltDroid Tux
 Base: Android-x86 Android 10 x64
 Filesystem: SquashFS
 EOF
 
-cat > "$SYSTEM/etc/rebuiltdroid-tux.properties" <<'EOF'
+cat > "$ANDROID_SYSTEM/etc/rebuiltdroid-tux.properties" <<'EOF'
 ro.rebuiltdroid.name=RebuiltDroid Tux
 ro.rebuiltdroid.version=Android 10
 ro.rebuiltdroid.base=Android-x86
@@ -50,7 +51,6 @@ EOF
 echo "Rebuilding real system filesystem..."
 mksquashfs "$SYSTEM" "$WORK/system.sfs" -comp xz -noappend >/dev/null
 
-# Keep the original ISO boot structures and replace the discovered filesystem at its original path.
 ISO_SYSTEM_PATH="/${SYSTEM_SFS#"$TREE"/}"
 echo "Replacing $ISO_SYSTEM_PATH while replaying the original boot metadata..."
 xorriso -indev "$BASE_ISO" \
@@ -66,6 +66,7 @@ RebuiltDroid Tux Android 10 x64
 Base: $BASE_URL
 Filesystem: SquashFS
 Original filesystem path: $ISO_SYSTEM_PATH
+Branding path inside Android filesystem: /system/etc/rebuiltdroid-tux
 Output: RebuiltDroid-Tux-Android10.iso
 EOF
 
