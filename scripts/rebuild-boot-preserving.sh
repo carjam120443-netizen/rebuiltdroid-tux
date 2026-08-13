@@ -7,11 +7,9 @@ OUT="${OUT:-$PWD/out-preserve}"
 
 ISO_TREE="$WORK/iso"
 SYSTEM="$WORK/system"
-BOOT_CATALOG="$WORK/boot-catalog"
-BOOT_IMAGE="$WORK/boot-image"
 
 rm -rf "$WORK" "$OUT"
-mkdir -p "$ISO_TREE" "$SYSTEM" "$BOOT_CATALOG" "$BOOT_IMAGE" "$OUT"
+mkdir -p "$ISO_TREE" "$SYSTEM" "$OUT"
 
 echo "========================================"
 echo " RebuiltDroid Tux Boot-Preserving Build"
@@ -19,14 +17,20 @@ echo "========================================"
 
 echo
 echo "[1/8] Inspecting original ISO..."
-xorriso -indev "$BASE_ISO" -report_el_torito plain \
+
+xorriso \
+  -indev "$BASE_ISO" \
+  -report_el_torito plain \
   | tee "$OUT/original-el-torito.txt"
 
-xorriso -indev "$BASE_ISO" -report_system_area plain \
+xorriso \
+  -indev "$BASE_ISO" \
+  -report_system_area plain \
   | tee "$OUT/original-system-area.txt"
 
 echo
 echo "[2/8] Extracting complete ISO filesystem..."
+
 xorriso \
   -osirrox on \
   -indev "$BASE_ISO" \
@@ -42,11 +46,11 @@ SYSTEM_SFS="$(
 )"
 
 if [[ -z "$SYSTEM_SFS" ]]; then
-  echo "ERROR: Android system SquashFS was not found."
-  echo
-  echo "Files found in the extracted ISO:"
-  find "$ISO_TREE" -maxdepth 5 -type f | sort
-  exit 2
+    echo "ERROR: Android system SquashFS was not found."
+    echo
+    echo "Files found in the extracted ISO:"
+    find "$ISO_TREE" -maxdepth 5 -type f | sort
+    exit 2
 fi
 
 echo "System filesystem:"
@@ -54,7 +58,10 @@ echo "  $SYSTEM_SFS"
 
 echo
 echo "[4/8] Extracting real Android system..."
-unsquashfs -d "$SYSTEM" "$SYSTEM_SFS"
+
+unsquashfs \
+  -d "$SYSTEM" \
+  "$SYSTEM_SFS"
 
 echo
 echo "[5/8] Applying RebuiltDroid Tux branding..."
@@ -67,10 +74,13 @@ Android-x86 Android 10 x64
 Boot-preserving build
 EOF
 
-# Optional branding directory.
 if [[ -d "branding" ]]; then
     mkdir -p "$SYSTEM/system/etc/rebuiltdroid-tux/branding"
-    cp -a branding/. "$SYSTEM/system/etc/rebuiltdroid-tux/branding/" || true
+
+    cp -a \
+      branding/. \
+      "$SYSTEM/system/etc/rebuiltdroid-tux/branding/" \
+      || true
 fi
 
 echo
@@ -78,25 +88,37 @@ echo "[6/8] Rebuilding ONLY the Android system filesystem..."
 
 rm -f "$SYSTEM_SFS"
 
+# Use every CPU available on the GitHub Actions runner.
+CPU_COUNT="$(nproc)"
+
+if [[ "$CPU_COUNT" -lt 1 ]]; then
+    CPU_COUNT=1
+fi
+
+echo "Using $CPU_COUNT processor(s) for SquashFS compression."
+
 mksquashfs \
   "$SYSTEM" \
   "$SYSTEM_SFS" \
   -comp xz \
-  -processors 0 \
+  -processors "$CPU_COUNT" \
   -noappend \
   -progress
 
 echo
-echo "[7/8] Rebuilding ISO while preserving Android-x86 boot files..."
+echo "[7/8] Rebuilding ISO from preserved Android-x86 boot tree..."
 
 #
-# IMPORTANT:
+# We do not modify:
 #
-# We deliberately do NOT generate a new GRUB configuration,
-# kernel, initrd, boot catalog, or Android boot files here.
+# - kernel
+# - initrd
+# - GRUB files
+# - isolinux files
+# - Android boot configuration
+# - EFI image
 #
-# Everything outside system.sfs remains the extracted contents
-# of the original Android-x86 ISO.
+# Only system.sfs has been replaced.
 #
 
 ISO_OUTPUT="$OUT/RebuiltDroid-Tux-Android10-preserved.iso"
@@ -123,12 +145,15 @@ echo "Generated ISO:"
 ls -lh "$ISO_OUTPUT"
 
 echo
-echo "Checking ISO boot information..."
+echo "Checking rebuilt El Torito boot information..."
 
 xorriso \
   -indev "$ISO_OUTPUT" \
   -report_el_torito plain \
   | tee "$OUT/rebuilt-el-torito.txt"
+
+echo
+echo "Checking rebuilt system-area information..."
 
 xorriso \
   -indev "$ISO_OUTPUT" \
@@ -147,7 +172,18 @@ echo
 echo "========================================"
 echo " BUILD COMPLETE"
 echo "========================================"
+
 echo
 echo "ISO:"
 echo "  $ISO_OUTPUT"
+
 echo
+echo "Artifacts:"
+echo "  $OUT/original-el-torito.txt"
+echo "  $OUT/original-system-area.txt"
+echo "  $OUT/rebuilt-el-torito.txt"
+echo "  $OUT/rebuilt-system-area.txt"
+echo "  $OUT/iso-tree.tar.gz"
+
+echo
+echo "RebuiltDroid Tux ISO is ready."
