@@ -1,0 +1,9 @@
+RebuiltDroid Tux branding assets
+
+The build uses this branding identity:
+- OS name: RebuiltDroid Tux
+- Base: Android-x86 Android 10 x64
+- Mascot: Tux
+- Boot concept: Android robot + Tux side-by-side where the upstream boot artwork/layout permits replacement.
+
+Tux artwork should be supplied as an appropriately licensed asset or generated as original artwork. The build script does not download proprietary artwork.
