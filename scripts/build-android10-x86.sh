@@ -44,11 +44,9 @@ else
 fi
 
 sudo mount -o loop,rw "$RAW_IMG" "$MOUNT"
-ANDROID_SYSTEM="$MOUNT"
 
-# Android-x86 10's system image can use an A/B-style layout where framework
-# artifacts are under /system/system. Accept both layouts, but never invent a
-# framework.jar: the real framework must be present in the image.
+# Android-x86 10 may expose the framework at either the image root or a
+# nested /system tree. Detect the real framework root after mounting.
 if [[ -f "$MOUNT/framework/framework.jar" ]]; then
   FRAMEWORK_ROOT="$MOUNT"
 elif [[ -f "$MOUNT/system/framework/framework.jar" ]]; then
@@ -62,14 +60,16 @@ else
 fi
 
 echo "Android framework root: ${FRAMEWORK_ROOT#$MOUNT}"
-mkdir -p "$FRAMEWORK_ROOT/etc/rebuiltdroid-tux"
-printf '%s\n' 'RebuiltDroid Tux' 'Base: Android-x86 Android 10 x64' 'Filesystem: system.img inside system.sfs' > "$FRAMEWORK_ROOT/etc/rebuiltdroid-tux/BUILD_INFO"
-printf '%s\n' 'ro.rebuiltdroid.name=RebuiltDroid Tux' 'ro.rebuiltdroid.version=Android 10' 'ro.rebuiltdroid.base=Android-x86' > "$FRAMEWORK_ROOT/etc/rebuiltdroid-tux.properties"
+
+# The loop-mounted filesystem belongs to root because it was mounted with
+# sudo. Perform writes through sudo rather than changing ownership of the
+# Android image's system files.
+sudo mkdir -p "$FRAMEWORK_ROOT/etc/rebuiltdroid-tux"
+printf '%s\n' 'RebuiltDroid Tux' 'Base: Android-x86 Android 10 x64' 'Filesystem: system.img inside system.sfs' | sudo tee "$FRAMEWORK_ROOT/etc/rebuiltdroid-tux/BUILD_INFO" >/dev/null
+printf '%s\n' 'ro.rebuiltdroid.name=RebuiltDroid Tux' 'ro.rebuiltdroid.version=Android 10' 'ro.rebuiltdroid.base=Android-x86' | sudo tee "$FRAMEWORK_ROOT/etc/rebuiltdroid-tux.properties" >/dev/null
 sync
 sudo umount "$MOUNT"
 
-# Preserve the image exactly as a filesystem image; do not put the mounted
-# image contents directly into the outer SquashFS.
 cp "$RAW_IMG" "$SYSTEM/system.img"
 mksquashfs "$SYSTEM" "$WORK/system.sfs" -comp zlib -noappend >/dev/null
 ISO_SYSTEM_PATH="/${SYSTEM_SFS#"$TREE"/}"
