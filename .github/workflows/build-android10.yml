@@ -4,13 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: 'Direct URL to an Android 10 ISO you are licensed to download/rebuild'
+        description: 'Android 10 x64 ISO URL (defaults to the Archive.org Android-x86 image)'
         required: false
-        type: string
-      base_iso:
-        description: 'Repository-local ISO filename (normally supplied as an artifact/input in a custom runner)'
-        required: false
-        default: 'android10.iso'
+        default: 'https://archive.org/download/androidx86-10-isos/Android%2010%20x64%20%28Eng%29.iso'
         type: string
 
 jobs:
@@ -22,33 +18,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install image tools
+      - name: Install Android-x86 image tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xorriso squashfs-tools p7zip-full cpio gzip curl
+          sudo apt-get install -y xorriso squashfs-tools curl cpio gzip e2fsprogs android-sdk-libsparse-utils
 
-      - name: Download base Android 10 ISO
+      - name: Download Android 10 x64 base ISO
         env:
           BASE_URL: ${{ inputs.base_url }}
-          BASE_ISO: ${{ inputs.base_iso }}
-        run: |
-          if [ -n "$BASE_URL" ]; then
-            curl -L --fail --retry 3 "$BASE_URL" -o "$BASE_ISO"
-          fi
-          test -f "$BASE_ISO" || {
-            echo 'No Android 10 ISO supplied.'
-            echo 'Provide a licensed/redistributable base ISO URL with base_url, or place the ISO in the repository/runner as android10.iso.'
-            exit 2
-          }
+        run: curl -L --fail --retry 3 "$BASE_URL" -o android10.iso
 
       - name: Build RebuiltDroid Tux
         env:
-          BASE_ISO: ${{ inputs.base_iso }}
-        run: bash scripts/build-android10.sh
+          BASE_ISO: android10.iso
+          BASE_URL: ${{ inputs.base_url }}
+        run: bash scripts/build-android10-x86.sh
 
-      - name: Upload ISO and extracted filesystems
+      - name: Upload RebuiltDroid Tux ISO
         uses: actions/upload-artifact@v4
         with:
-          name: RebuiltDroid-Tux-Android10
+          name: RebuiltDroid-Tux-Android10-x64
           path: out/
           if-no-files-found: error
