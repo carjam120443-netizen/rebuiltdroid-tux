@@ -28,17 +28,31 @@ SYSTEM_SFS="$(find "$TREE" -type f \( -iname 'system.sfs' -o -iname 'system.squa
 echo "[2/4] Extracting Android system filesystem..."
 unsquashfs -d "$SYSTEM" "$SYSTEM_SFS" >/dev/null
 
-# These are core pieces used by Android's system_server/runtime startup.
+# Android-x86 system.sfs normally contains the contents of /system directly,
+# so framework.jar is at $SYSTEM/framework/framework.jar, not $SYSTEM/system/...
+# Support either layout so this verifier also works with custom images.
+if [[ -d "$SYSTEM/framework" ]]; then
+  ANDROID_SYSTEM="$SYSTEM"
+elif [[ -d "$SYSTEM/system/framework" ]]; then
+  ANDROID_SYSTEM="$SYSTEM/system"
+else
+  echo "ERROR: Android framework directory not found in extracted system.sfs" >&2
+  echo "Top-level extracted directories:"
+  find "$SYSTEM" -maxdepth 2 -type d -print | sort | head -100
+  exit 4
+fi
+
+echo "Detected Android /system tree at: $ANDROID_SYSTEM"
 echo "[3/4] Checking framework/runtime..."
 for f in \
-  "$SYSTEM/system/framework/framework.jar" \
-  "$SYSTEM/system/bin/app_process" \
-  "$SYSTEM/system/bin/servicemanager"; do
-  [[ -e "$f" ]] || { echo "ERROR: missing $f" >&2; exit 4; }
+  "$ANDROID_SYSTEM/framework/framework.jar" \
+  "$ANDROID_SYSTEM/bin/app_process" \
+  "$ANDROID_SYSTEM/bin/servicemanager"; do
+  [[ -e "$f" ]] || { echo "ERROR: missing $f" >&2; exit 5; }
 done
 
 if command -v strings >/dev/null 2>&1; then
-  if strings "$SYSTEM/system/framework/framework.jar" 2>/dev/null | grep -Eq 'PackageManagerService|com/android/server/pm'; then
+  if strings "$ANDROID_SYSTEM/framework/framework.jar" 2>/dev/null | grep -Eq 'PackageManagerService|com/android/server/pm'; then
     echo "PackageManagerService references found in framework.jar."
   else
     echo "WARNING: PackageManagerService references were not found by strings."
@@ -47,7 +61,7 @@ if command -v strings >/dev/null 2>&1; then
 fi
 
 echo "[4/4] Checking Android init/service configuration..."
-if [[ -d "$SYSTEM/system/etc/init" || -f "$SYSTEM/system/etc/init/hw/init.rc" ]]; then
+if [[ -d "$ANDROID_SYSTEM/etc/init" || -f "$ANDROID_SYSTEM/etc/init/hw/init.rc" ]]; then
   echo "Android init configuration present."
 else
   echo "WARNING: expected Android init configuration was not found."
