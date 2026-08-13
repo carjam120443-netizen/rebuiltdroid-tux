@@ -109,18 +109,21 @@ echo "New system.sfs:"
 ls -lh "$SYSTEM_SFS"
 
 echo
-echo "[7/8] Rebuilding ISO from preserved Android-x86 boot tree..."
+echo "[7/8] Replacing system.sfs while preserving the original Android-x86 boot structure..."
 
 ISO_OUTPUT="$OUT/RebuiltDroid-Tux-Android10-preserved.iso"
 
+# Start from the original ISO instead of generating a new ISO layout.
+# This preserves the original El Torito BIOS/UEFI boot entries,
+# isohybrid MBR/GPT system area, GRUB EFI image, and isolinux boot image.
 xorriso \
-  -as mkisofs \
-  -R \
-  -J \
-  -joliet-long \
-  -V "RebuiltDroid Tux Android 10" \
-  -o "$ISO_OUTPUT" \
-  "$ISO_TREE"
+  -indev "$BASE_ISO" \
+  -outdev "$ISO_OUTPUT" \
+  -boot_image any replay \
+  -rm /system.sfs \
+  -map "$SYSTEM_SFS" /system.sfs \
+  -volid "RebuiltDroid Tux Android 10" \
+  -commit
 
 echo
 echo "[8/8] Verifying generated ISO..."
@@ -174,3 +177,4 @@ echo "  $OUT/rebuilt-system-area.txt"
 echo "  $OUT/iso-tree.tar.gz"
 echo
 echo "RebuiltDroid Tux ISO is ready."
+echo
