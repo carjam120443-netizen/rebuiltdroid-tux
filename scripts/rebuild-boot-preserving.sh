@@ -13,7 +13,7 @@ mkdir -p "$ISO_TREE" "$SYSTEM" "$OUT"
 
 echo "=============================================="
 echo " RebuiltDroid Tux Android 10"
-echo " Boot-Preservation Build v3"
+echo " Boot-Preservation Build v4"
 echo "=============================================="
 
 echo
@@ -48,6 +48,8 @@ SYSTEM_SFS="$(
 
 if [[ -z "$SYSTEM_SFS" ]]; then
   echo "ERROR: Android system SquashFS was not found."
+  echo
+  echo "Files found in extracted ISO:"
   find "$ISO_TREE" -maxdepth 5 -type f | sort
   exit 2
 fi
@@ -59,11 +61,18 @@ echo
 echo "[4/11] Reading original SquashFS settings..."
 
 SQUASH_INFO="$(unsquashfs -s "$SYSTEM_SFS")"
+
 echo "$SQUASH_INFO"
+
+# unsquashfs prints:
+#   Compression gzip
+#   Block size 131072
+#
+# There is NO colon after "Compression".
 
 COMPRESSION="$(
   printf '%s\n' "$SQUASH_INFO" |
-  awk -F': ' '/^Compression / {print $2; exit}' |
+  awk '/^Compression / {print $2; exit}' |
   tr '[:upper:]' '[:lower:]'
 )"
 
@@ -73,6 +82,7 @@ BLOCK_SIZE="$(
 )"
 
 if [[ -z "$COMPRESSION" ]]; then
+  echo
   echo "ERROR: Could not detect original SquashFS compression."
   exit 3
 fi
@@ -81,6 +91,7 @@ case "$COMPRESSION" in
   gzip|lzo|lz4|xz|zstd)
     ;;
   *)
+    echo
     echo "ERROR: Unsupported original SquashFS compression:"
     echo "  $COMPRESSION"
     exit 4
@@ -88,6 +99,8 @@ case "$COMPRESSION" in
 esac
 
 if [[ -z "$BLOCK_SIZE" || ! "$BLOCK_SIZE" =~ ^[0-9]+$ ]]; then
+  echo "WARNING: Could not detect block size."
+  echo "Using default: 131072"
   BLOCK_SIZE=131072
 fi
 
@@ -113,12 +126,13 @@ mkdir -p "$SYSTEM/system/etc/rebuiltdroid-tux"
 cat > "$SYSTEM/system/etc/rebuiltdroid-tux/build-info" <<'EOF'
 RebuiltDroid Tux
 Android-x86 Android 10 x64
-Boot-preserving build v3
+Boot-preserving build v4
 Original SquashFS compression preserved
 EOF
 
 if [[ -d "branding" ]]; then
   mkdir -p "$SYSTEM/system/etc/rebuiltdroid-tux/branding"
+
   cp -a branding/. \
     "$SYSTEM/system/etc/rebuiltdroid-tux/branding/"
 fi
@@ -136,6 +150,7 @@ fi
 
 echo "Using $CPU_COUNT processor(s)."
 echo "Using original compression: $COMPRESSION"
+echo "Using original block size: $BLOCK_SIZE"
 
 mksquashfs \
   "$SYSTEM" \
@@ -146,6 +161,7 @@ mksquashfs \
   -noappend
 
 if [[ ! -s "$SYSTEM_SFS" ]]; then
+  echo
   echo "ERROR: New system.sfs was not created."
   exit 5
 fi
@@ -155,7 +171,7 @@ echo "New system.sfs:"
 ls -lh "$SYSTEM_SFS"
 
 echo
-echo "[8/11] Verifying SquashFS compression..."
+echo "[8/11] Verifying rebuilt SquashFS..."
 
 NEW_SQUASH_INFO="$(unsquashfs -s "$SYSTEM_SFS")"
 
@@ -163,12 +179,18 @@ echo "$NEW_SQUASH_INFO"
 
 NEW_COMPRESSION="$(
   printf '%s\n' "$NEW_SQUASH_INFO" |
-  awk -F': ' '/^Compression / {print $2; exit}' |
+  awk '/^Compression / {print $2; exit}' |
   tr '[:upper:]' '[:lower:]'
 )"
 
+NEW_BLOCK_SIZE="$(
+  printf '%s\n' "$NEW_SQUASH_INFO" |
+  awk '/^Block size / {print $3; exit}'
+)"
+
 if [[ "$NEW_COMPRESSION" != "$COMPRESSION" ]]; then
-  echo "ERROR: Compression changed!"
+  echo
+  echo "ERROR: SquashFS compression changed!"
 
   echo "Original:"
   echo "  $COMPRESSION"
@@ -179,9 +201,25 @@ if [[ "$NEW_COMPRESSION" != "$COMPRESSION" ]]; then
   exit 6
 fi
 
+if [[ "$NEW_BLOCK_SIZE" != "$BLOCK_SIZE" ]]; then
+  echo
+  echo "ERROR: SquashFS block size changed!"
+
+  echo "Original:"
+  echo "  $BLOCK_SIZE"
+
+  echo "New:"
+  echo "  $NEW_BLOCK_SIZE"
+
+  exit 7
+fi
+
 echo
 echo "SquashFS compression preserved:"
 echo "  $NEW_COMPRESSION"
+
+echo "SquashFS block size preserved:"
+echo "  $NEW_BLOCK_SIZE"
 
 echo
 echo "[9/11] Replaying original Android-x86 boot metadata..."
@@ -197,8 +235,9 @@ xorriso \
   -commit
 
 if [[ ! -s "$ISO_OUTPUT" ]]; then
+  echo
   echo "ERROR: ISO was not created."
-  exit 7
+  exit 8
 fi
 
 echo
@@ -215,24 +254,30 @@ xorriso \
   | tee "$OUT/rebuilt-system-area.txt"
 
 if ! grep -q "El Torito" "$OUT/rebuilt-el-torito.txt"; then
+  echo
   echo "ERROR: El Torito boot metadata missing."
-  exit 8
-fi
-
-if ! grep -q "/isolinux/isolinux.bin" "$OUT/rebuilt-el-torito.txt"; then
-  echo "ERROR: BIOS boot image was not preserved."
   exit 9
 fi
 
-if ! grep -q "/boot/grub/efi.img" "$OUT/rebuilt-el-torito.txt"; then
-  echo "ERROR: UEFI boot image was not preserved."
+if ! grep -q "/isolinux/isolinux.bin" \
+  "$OUT/rebuilt-el-torito.txt"; then
+  echo
+  echo "ERROR: BIOS boot image was not preserved."
   exit 10
+fi
+
+if ! grep -q "/boot/grub/efi.img" \
+  "$OUT/rebuilt-el-torito.txt"; then
+  echo
+  echo "ERROR: UEFI boot image was not preserved."
+  exit 11
 fi
 
 if ! grep -qi "isohybrid\|MBR.*GPT" \
   "$OUT/rebuilt-system-area.txt"; then
+  echo
   echo "ERROR: Expected ISO hybrid MBR/GPT structure missing."
-  exit 11
+  exit 12
 fi
 
 echo
