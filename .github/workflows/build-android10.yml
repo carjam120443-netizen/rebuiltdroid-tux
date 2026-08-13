@@ -41,7 +41,7 @@ jobs:
 
       - name: Verify rebuilt Android Package Manager framework
         env:
-          BASE_ISO: android10.iso
+          BASE_ISO: out/RebuiltDroid-Tux-Android10.iso
         run: bash scripts/verify-package-manager.sh
 
       - name: Confirm ISO output exists
