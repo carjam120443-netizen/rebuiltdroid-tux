@@ -35,16 +35,17 @@ jobs:
         run: bash scripts/rebuild-boot-preserving.sh
 
       - name: Package ISO and metadata
+        run: |      - name: Package ISO and metadata
         run: |
           mkdir -p package/RebuiltDroid-Tux
           cp out-preserve/RebuiltDroid-Tux-Android10-preserved.iso package/RebuiltDroid-Tux/
-          cp out-preserve/el-torito.txt package/RebuiltDroid-Tux/
-          cp out-preserve/system-area.txt package/RebuiltDroid-Tux/
+          cp out-preserve/rebuilt-el-torito.txt package/RebuiltDroid-Tux/
+          cp out-preserve/rebuilt-system-area.txt package/RebuiltDroid-Tux/
           cp out-preserve/iso-tree.tar.gz package/RebuiltDroid-Tux/
           printf 'RebuiltDroid Tux Android 10\nBoot-preserving build\n' > package/RebuiltDroid-Tux/BUILD_INFO.txt
           cd package
           zip -r ../RebuiltDroid-Tux-Android10-boot-preserved.zip RebuiltDroid-Tux
-
+      
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
